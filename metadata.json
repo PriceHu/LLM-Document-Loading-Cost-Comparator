@@ -1,0 +1,8 @@
+{
+  "name": "LLM Document Ingestion Cost Comparator",
+  "description": "Interactive cost comparator analyzing upfront document ingestion vs. iterative tool retrieval with context caching for LLMs, supporting Gemini 3.8, Claude 5, GPT-5.6, and multilingual i18n.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
