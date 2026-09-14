@@ -1,4 +1,4 @@
-import { SimulationParams, SimulationResult, SimulationTurn, ModelPreset, CaseId, CaseSummary } from '../types';
+import { SimulationParams, SimulationResult, SimulationTurn, ModelPreset, CaseId, CaseSummary, TokenSegmentBreakdown } from '../types';
 
 export const DEFAULT_PARAMS: SimulationParams = {
   totalPages: 100, // N
@@ -146,9 +146,11 @@ export function runSimulation(params: SimulationParams): SimulationResult {
   let totalTokensCase3 = 0;
   let totalTokensCase4 = 0;
 
-  let case2DocPagesAccumulated = 0;
-  let case4TextPagesAccumulated = 0;
-  let case4ImagesAccumulated = 0;
+  // Running cumulative token breakdowns
+  let cumBreakdownC1: TokenSegmentBreakdown = { systemPrompt: 0, userQuestions: 0, toolCalls: 0, docTokens: 0, answers: 0 };
+  let cumBreakdownC2: TokenSegmentBreakdown = { systemPrompt: 0, userQuestions: 0, toolCalls: 0, docTokens: 0, answers: 0 };
+  let cumBreakdownC3: TokenSegmentBreakdown = { systemPrompt: 0, userQuestions: 0, toolCalls: 0, docTokens: 0, imageTokens: 0, answers: 0 };
+  let cumBreakdownC4: TokenSegmentBreakdown = { systemPrompt: 0, userQuestions: 0, toolCalls: 0, docTokens: 0, imageTokens: 0, answers: 0 };
 
   for (let q = 1; q <= totalQuestions; q++) {
     // =========================================================================
@@ -178,13 +180,34 @@ export function runSimulation(params: SimulationParams): SimulationResult {
     cumCostCase1 += c1TurnCost;
     totalTokensCase1 += c1NewInput + c1CachedInput + c1Output;
 
+    // Tokens accumulated across all invocations in Question q (1 invocation)
+    const c1TurnBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: systemPromptTokens,
+      userQuestions: q * tokensPerQuestion,
+      toolCalls: 0,
+      docTokens: totalDocImageTokens,
+      answers: q * tokensPerAnswer,
+    };
+    cumBreakdownC1 = {
+      systemPrompt: cumBreakdownC1.systemPrompt + c1TurnBreakdown.systemPrompt,
+      userQuestions: cumBreakdownC1.userQuestions + c1TurnBreakdown.userQuestions,
+      toolCalls: 0,
+      docTokens: cumBreakdownC1.docTokens + c1TurnBreakdown.docTokens,
+      answers: cumBreakdownC1.answers + c1TurnBreakdown.answers,
+    };
+    const c1ContextBreakdown: TokenSegmentBreakdown = { ...c1TurnBreakdown };
+
     // =========================================================================
     // CASE 2: Iterative Page Images by Tool (Sequential ReAct: k tool calls)
     // =========================================================================
+    const c2PagesBefore = Math.min(totalPages, (q - 1) * toolCallsPerQuestion * pagesPerToolCall);
     let c2TurnNewInputTotal = 0;
     let c2TurnCachedInputTotal = 0;
     let c2TurnOutputTotal = 0;
     let activeContext2 = contextEndCase2;
+
+    let c2DocPagesSum = 0;
+    let c2CurrentPages = c2PagesBefore;
 
     // Step 0: User asks Question q, LLM decides first tool call
     const c2Step0NewInput = (q === 1 ? systemPromptTokens : 0) + tokensPerQuestion;
@@ -194,12 +217,13 @@ export function runSimulation(params: SimulationParams): SimulationResult {
     c2TurnNewInputTotal += c2Step0NewInput;
     c2TurnCachedInputTotal += c2Step0CachedInput;
     c2TurnOutputTotal += c2Step0Output;
+    c2DocPagesSum += c2CurrentPages; // Step 0 context contains c2PagesBefore
 
     activeContext2 = c2Step0CachedInput + c2Step0NewInput + c2Step0Output;
 
     // Steps 1 to k: Tool executions returning page images
     for (let i = 1; i <= toolCallsPerQuestion; i++) {
-      case2DocPagesAccumulated += pagesPerToolCall;
+      c2CurrentPages = Math.min(totalPages, c2PagesBefore + i * pagesPerToolCall);
       const toolResultTokens = pagesPerToolCall * imageTokensPerPage;
 
       const isLastStep = i === toolCallsPerQuestion;
@@ -210,6 +234,7 @@ export function runSimulation(params: SimulationParams): SimulationResult {
       c2TurnNewInputTotal += stepNewInput;
       c2TurnCachedInputTotal += stepCachedInput;
       c2TurnOutputTotal += stepOutput;
+      c2DocPagesSum += c2CurrentPages;
 
       activeContext2 = stepCachedInput + stepNewInput + stepOutput;
     }
@@ -222,6 +247,37 @@ export function runSimulation(params: SimulationParams): SimulationResult {
 
     cumCostCase2 += c2TurnCost;
     totalTokensCase2 += c2TurnNewInputTotal + c2TurnCachedInputTotal + c2TurnOutputTotal;
+
+    // Tokens accumulated in Question q across all k + 1 model invocations:
+    const k2 = toolCallsPerQuestion;
+    const c2TurnDocTokens = c2DocPagesSum * imageTokensPerPage;
+    const c2TurnSysPrompt = (k2 + 1) * systemPromptTokens;
+    const c2TurnUserQuestions = (k2 + 1) * q * tokensPerQuestion;
+    const c2TurnToolCalls =
+      ((k2 + 1) * (q - 1) * k2 + (k2 * (k2 + 1)) / 2 + k2) * tokensPerToolCall;
+    const c2TurnAnswers = ((k2 + 1) * (q - 1) + 1) * tokensPerAnswer;
+
+    const c2TurnBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: c2TurnSysPrompt,
+      userQuestions: c2TurnUserQuestions,
+      toolCalls: c2TurnToolCalls,
+      docTokens: c2TurnDocTokens,
+      answers: c2TurnAnswers,
+    };
+    cumBreakdownC2 = {
+      systemPrompt: cumBreakdownC2.systemPrompt + c2TurnBreakdown.systemPrompt,
+      userQuestions: cumBreakdownC2.userQuestions + c2TurnBreakdown.userQuestions,
+      toolCalls: cumBreakdownC2.toolCalls + c2TurnBreakdown.toolCalls,
+      docTokens: cumBreakdownC2.docTokens + c2TurnBreakdown.docTokens,
+      answers: cumBreakdownC2.answers + c2TurnBreakdown.answers,
+    };
+    const c2ContextBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: systemPromptTokens,
+      userQuestions: q * tokensPerQuestion,
+      toolCalls: q * toolCallsPerQuestion * tokensPerToolCall,
+      docTokens: c2CurrentPages * imageTokensPerPage,
+      answers: q * tokensPerAnswer,
+    };
 
     // =========================================================================
     // CASE 3: All Text Upfront + 1 Page Image Tool per Question
@@ -263,14 +319,53 @@ export function runSimulation(params: SimulationParams): SimulationResult {
     cumCostCase3 += c3TurnCost;
     totalTokensCase3 += c3TurnNewInputTotal + c3TurnCachedInputTotal + c3TurnOutputTotal;
 
+    // Tokens accumulated in Question q across the 2 model invocations:
+    const c3TurnDocText = 2 * totalDocTextTokens;
+    const c3TurnDocImages = (2 * q - 1) * imagesReadPerQuestion * imageTokensPerPage;
+    const c3TurnSysPrompt = 2 * systemPromptTokens;
+    const c3TurnUserQuestions = 2 * q * tokensPerQuestion;
+    const c3TurnToolCalls = 2 * q * tokensPerToolCall;
+    const c3TurnAnswers = (2 * q - 1) * tokensPerAnswer;
+
+    const c3TurnBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: c3TurnSysPrompt,
+      userQuestions: c3TurnUserQuestions,
+      toolCalls: c3TurnToolCalls,
+      docTokens: c3TurnDocText,
+      imageTokens: c3TurnDocImages,
+      answers: c3TurnAnswers,
+    };
+    cumBreakdownC3 = {
+      systemPrompt: cumBreakdownC3.systemPrompt + c3TurnBreakdown.systemPrompt,
+      userQuestions: cumBreakdownC3.userQuestions + c3TurnBreakdown.userQuestions,
+      toolCalls: cumBreakdownC3.toolCalls + c3TurnBreakdown.toolCalls,
+      docTokens: cumBreakdownC3.docTokens + c3TurnBreakdown.docTokens,
+      imageTokens: (cumBreakdownC3.imageTokens || 0) + (c3TurnBreakdown.imageTokens || 0),
+      answers: cumBreakdownC3.answers + c3TurnBreakdown.answers,
+    };
+    const c3ContextBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: systemPromptTokens,
+      userQuestions: q * tokensPerQuestion,
+      toolCalls: q * tokensPerToolCall,
+      docTokens: totalDocTextTokens,
+      imageTokens: q * imagesReadPerQuestion * imageTokensPerPage,
+      answers: q * tokensPerAnswer,
+    };
+
     // =========================================================================
     // CASE 4: Iterative Text Pages + 1 Page Image Tool per Question
     // (k text tool calls + 1 image tool call + 1 answer = k + 2 steps)
     // =========================================================================
+    const c4TextPagesBefore = Math.min(totalPages, (q - 1) * toolCallsPerQuestion * pagesPerToolCall);
+    const c4ImagesBefore = (q - 1) * imagesReadPerQuestion;
+
     let c4TurnNewInputTotal = 0;
     let c4TurnCachedInputTotal = 0;
     let c4TurnOutputTotal = 0;
     let activeContext4 = contextEndCase4;
+
+    let c4TextPagesSum = 0;
+    let c4CurrentTextPages = c4TextPagesBefore;
 
     // Step 0: User asks Question q, LLM decides first text tool call
     const c4Step0NewInput = (q === 1 ? systemPromptTokens : 0) + tokensPerQuestion;
@@ -280,28 +375,29 @@ export function runSimulation(params: SimulationParams): SimulationResult {
     c4TurnNewInputTotal += c4Step0NewInput;
     c4TurnCachedInputTotal += c4Step0CachedInput;
     c4TurnOutputTotal += c4Step0Output;
+    c4TextPagesSum += c4CurrentTextPages; // Step 0 sees c4TextPagesBefore
 
     activeContext4 = c4Step0CachedInput + c4Step0NewInput + c4Step0Output;
 
     // Steps 1 to k: Text tool executions
     for (let i = 1; i <= toolCallsPerQuestion; i++) {
-      case4TextPagesAccumulated += pagesPerToolCall;
+      c4CurrentTextPages = Math.min(totalPages, c4TextPagesBefore + i * pagesPerToolCall);
       const textResultTokens = pagesPerToolCall * textTokensPerPage;
 
       // When the text calls finish, next is the image tool call
       const stepNewInput = textResultTokens;
       const stepCachedInput = activeContext4;
-      const stepOutput = tokensPerToolCall; // next call is to image tool
+      const stepOutput = tokensPerToolCall;
 
       c4TurnNewInputTotal += stepNewInput;
       c4TurnCachedInputTotal += stepCachedInput;
       c4TurnOutputTotal += stepOutput;
+      c4TextPagesSum += c4CurrentTextPages;
 
       activeContext4 = stepCachedInput + stepNewInput + stepOutput;
     }
 
     // Step k + 1: Image tool execution returning page image(s) -> final answer
-    case4ImagesAccumulated += imagesReadPerQuestion;
     const imageResultTokens = imagesReadPerQuestion * imageTokensPerPage;
     const c4ImageStepNewInput = imageResultTokens;
     const c4ImageStepCachedInput = activeContext4;
@@ -310,6 +406,7 @@ export function runSimulation(params: SimulationParams): SimulationResult {
     c4TurnNewInputTotal += c4ImageStepNewInput;
     c4TurnCachedInputTotal += c4ImageStepCachedInput;
     c4TurnOutputTotal += c4ImageStepOutput;
+    c4TextPagesSum += c4CurrentTextPages; // Step k + 1 sees final text pages
 
     activeContext4 = c4ImageStepCachedInput + c4ImageStepNewInput + c4ImageStepOutput;
     contextEndCase4 = activeContext4;
@@ -322,6 +419,44 @@ export function runSimulation(params: SimulationParams): SimulationResult {
     cumCostCase4 += c4TurnCost;
     totalTokensCase4 += c4TurnNewInputTotal + c4TurnCachedInputTotal + c4TurnOutputTotal;
 
+    // Tokens accumulated in Question q across all k + 2 model invocations:
+    const k4 = toolCallsPerQuestion;
+    const totalStepsC4 = k4 + 2;
+    const c4TurnDocText = c4TextPagesSum * textTokensPerPage;
+    const c4TurnImagePages = (k4 + 1) * c4ImagesBefore + (c4ImagesBefore + imagesReadPerQuestion);
+    const c4TurnDocImages = c4TurnImagePages * imageTokensPerPage;
+    const c4TurnSysPrompt = totalStepsC4 * systemPromptTokens;
+    const c4TurnUserQuestions = totalStepsC4 * q * tokensPerQuestion;
+    const c4InputToolCalls =
+      totalStepsC4 * (q - 1) * (k4 + 1) + ((k4 + 1) * (k4 + 2)) / 2;
+    const c4TurnToolCalls = (c4InputToolCalls + (k4 + 1)) * tokensPerToolCall;
+    const c4TurnAnswers = (totalStepsC4 * (q - 1) + 1) * tokensPerAnswer;
+
+    const c4TurnBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: c4TurnSysPrompt,
+      userQuestions: c4TurnUserQuestions,
+      toolCalls: c4TurnToolCalls,
+      docTokens: c4TurnDocText,
+      imageTokens: c4TurnDocImages,
+      answers: c4TurnAnswers,
+    };
+    cumBreakdownC4 = {
+      systemPrompt: cumBreakdownC4.systemPrompt + c4TurnBreakdown.systemPrompt,
+      userQuestions: cumBreakdownC4.userQuestions + c4TurnBreakdown.userQuestions,
+      toolCalls: cumBreakdownC4.toolCalls + c4TurnBreakdown.toolCalls,
+      docTokens: cumBreakdownC4.docTokens + c4TurnBreakdown.docTokens,
+      imageTokens: (cumBreakdownC4.imageTokens || 0) + (c4TurnBreakdown.imageTokens || 0),
+      answers: cumBreakdownC4.answers + c4TurnBreakdown.answers,
+    };
+    const c4ContextBreakdown: TokenSegmentBreakdown = {
+      systemPrompt: systemPromptTokens,
+      userQuestions: q * tokensPerQuestion,
+      toolCalls: q * (toolCallsPerQuestion + 1) * tokensPerToolCall,
+      docTokens: c4CurrentTextPages * textTokensPerPage,
+      imageTokens: q * imagesReadPerQuestion * imageTokensPerPage,
+      answers: q * tokensPerAnswer,
+    };
+
     // Record turn ledger
     turns.push({
       turnIndex: q,
@@ -333,13 +468,9 @@ export function runSimulation(params: SimulationParams): SimulationResult {
         turnCost: c1TurnCost,
         cumulativeCost: cumCostCase1,
         contextLengthEnd: contextEndCase1,
-        tokensBreakdown: {
-          systemPrompt: systemPromptTokens,
-          userQuestions: q * tokensPerQuestion,
-          toolCalls: 0,
-          docTokens: totalDocImageTokens,
-          answers: q * tokensPerAnswer,
-        },
+        tokensBreakdown: c1TurnBreakdown,
+        cumulativeTokensBreakdown: { ...cumBreakdownC1 },
+        contextTokensBreakdown: c1ContextBreakdown,
       },
       case2: {
         questionIndex: q,
@@ -349,13 +480,9 @@ export function runSimulation(params: SimulationParams): SimulationResult {
         turnCost: c2TurnCost,
         cumulativeCost: cumCostCase2,
         contextLengthEnd: contextEndCase2,
-        tokensBreakdown: {
-          systemPrompt: systemPromptTokens,
-          userQuestions: q * tokensPerQuestion,
-          toolCalls: q * toolCallsPerQuestion * tokensPerToolCall,
-          docTokens: case2DocPagesAccumulated * imageTokensPerPage,
-          answers: q * tokensPerAnswer,
-        },
+        tokensBreakdown: c2TurnBreakdown,
+        cumulativeTokensBreakdown: { ...cumBreakdownC2 },
+        contextTokensBreakdown: c2ContextBreakdown,
       },
       case3: {
         questionIndex: q,
@@ -365,14 +492,9 @@ export function runSimulation(params: SimulationParams): SimulationResult {
         turnCost: c3TurnCost,
         cumulativeCost: cumCostCase3,
         contextLengthEnd: contextEndCase3,
-        tokensBreakdown: {
-          systemPrompt: systemPromptTokens,
-          userQuestions: q * tokensPerQuestion,
-          toolCalls: q * tokensPerToolCall,
-          docTokens: totalDocTextTokens,
-          imageTokens: q * imagesReadPerQuestion * imageTokensPerPage,
-          answers: q * tokensPerAnswer,
-        },
+        tokensBreakdown: c3TurnBreakdown,
+        cumulativeTokensBreakdown: { ...cumBreakdownC3 },
+        contextTokensBreakdown: c3ContextBreakdown,
       },
       case4: {
         questionIndex: q,
@@ -382,14 +504,9 @@ export function runSimulation(params: SimulationParams): SimulationResult {
         turnCost: c4TurnCost,
         cumulativeCost: cumCostCase4,
         contextLengthEnd: contextEndCase4,
-        tokensBreakdown: {
-          systemPrompt: systemPromptTokens,
-          userQuestions: q * tokensPerQuestion,
-          toolCalls: q * (toolCallsPerQuestion + 1) * tokensPerToolCall,
-          docTokens: case4TextPagesAccumulated * textTokensPerPage,
-          imageTokens: case4ImagesAccumulated * imageTokensPerPage,
-          answers: q * tokensPerAnswer,
-        },
+        tokensBreakdown: c4TurnBreakdown,
+        cumulativeTokensBreakdown: { ...cumBreakdownC4 },
+        contextTokensBreakdown: c4ContextBreakdown,
       },
     });
   }

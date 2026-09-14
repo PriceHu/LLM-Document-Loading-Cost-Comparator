@@ -16,6 +16,15 @@ export interface SimulationParams {
   customTotalQuestions?: number; // optional override for questions
 }
 
+export interface TokenSegmentBreakdown {
+  systemPrompt: number;
+  userQuestions: number;
+  toolCalls: number;
+  docTokens: number;
+  imageTokens?: number;
+  answers: number;
+}
+
 export interface TurnMetrics {
   questionIndex: number;
   newInputTokens: number;
@@ -24,14 +33,9 @@ export interface TurnMetrics {
   turnCost: number;
   cumulativeCost: number;
   contextLengthEnd: number;
-  tokensBreakdown: {
-    systemPrompt: number;
-    userQuestions: number;
-    toolCalls: number;
-    docTokens: number;
-    imageTokens?: number;
-    answers: number;
-  };
+  tokensBreakdown: TokenSegmentBreakdown;
+  cumulativeTokensBreakdown?: TokenSegmentBreakdown;
+  contextTokensBreakdown?: TokenSegmentBreakdown;
 }
 
 export interface SimulationTurn {

@@ -102,7 +102,14 @@ export interface Translations {
     legendQuestions: string;
     legendToolCalls: string;
     legendDoc: string;
+    legendDocImages: string;
+    legendDocText: string;
     legendAnswers: string;
+    questionSliderLabel: string;
+    breakdownTurnMode: string;
+    breakdownCumulativeMode: string;
+    breakdownSubtitleAccumulated: string;
+    totalTokensAtQ: string;
     xAxisQuestion: string;
     yAxisCost: string;
     yAxisTokens: string;
@@ -263,7 +270,14 @@ export const translations: Record<Language, Translations> = {
       legendQuestions: 'Questions',
       legendToolCalls: 'Tool Calls',
       legendDoc: 'Doc Content (Text / Images)',
+      legendDocImages: 'Doc Images',
+      legendDocText: 'Doc Text',
       legendAnswers: 'Answers',
+      questionSliderLabel: 'Select Question (Turn)',
+      breakdownTurnMode: 'Question Q{q} (All Steps In Turn)',
+      breakdownCumulativeMode: 'Cumulative (Q1 to Q{q})',
+      breakdownSubtitleAccumulated: 'Total tokens processed across all model invocations and tool steps within Question Q{q}.',
+      totalTokensAtQ: 'Total Tokens at Q{q}',
       xAxisQuestion: 'Question',
       yAxisCost: 'Cost (USD)',
       yAxisTokens: 'Tokens',
@@ -422,7 +436,14 @@ export const translations: Record<Language, Translations> = {
       legendQuestions: '用户提问',
       legendToolCalls: '工具调用',
       legendDoc: '文档内容（文本/图像）',
+      legendDocImages: '文档图像 Token',
+      legendDocText: '文档文本 Token',
       legendAnswers: '回答生成',
+      questionSliderLabel: '选择问答轮次',
+      breakdownTurnMode: '本轮单问 Q{q}（该问全步骤累加）',
+      breakdownCumulativeMode: '全局累计（Q1 至 Q{q}）',
+      breakdownSubtitleAccumulated: '展示在第 Q{q} 轮中所有模型调用步骤（包含工具往返）实际处理消耗的 Token 构成。',
+      totalTokensAtQ: '第 {q} 轮处理总 Token',
       xAxisQuestion: '问答轮次',
       yAxisCost: '支出（美元）',
       yAxisTokens: 'Token 数量',
@@ -581,7 +602,14 @@ export const translations: Record<Language, Translations> = {
       legendQuestions: '質問',
       legendToolCalls: 'ツール呼出',
       legendDoc: '文書内容 (テキスト/画像)',
+      legendDocImages: '文書画像トークン',
+      legendDocText: '文書テキストトークン',
       legendAnswers: '回答',
+      questionSliderLabel: '質問ターンを選択',
+      breakdownTurnMode: '該当問 Q{q}（全ステップ合算）',
+      breakdownCumulativeMode: '累計（Q1〜Q{q}）',
+      breakdownSubtitleAccumulated: '質問 Q{q} 内で発生した全ツール呼出・往復ステップで処理されたトークン内訳。',
+      totalTokensAtQ: 'Q{q} 処理トークン総数',
       xAxisQuestion: '質問ターン',
       yAxisCost: '費用 (USD)',
       yAxisTokens: 'トークン',
